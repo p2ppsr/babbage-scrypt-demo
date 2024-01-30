@@ -3,6 +3,7 @@ import { SmartContract, sha256, toByteString } from 'scrypt-ts'
 import {
     createAction,
     CreateActionResult,
+    CreateActionOutput,
     getTransactionOutputs,
     GetTransactionOutputResult,
 } from '@babbage/sdk-ts'
@@ -23,7 +24,6 @@ const deploy = async (
 ): Promise<CreateActionResult> => {
     return await createAction({
         description,
-        inputs: {},
         outputs: [
             {
                 script: instance.lockingScript.toHex(),
@@ -62,7 +62,10 @@ const list = async <T extends SmartContract>(
 
 const redeem = async (
     listResult: ListResult<SmartContract>,
-    description: string
+    redeemTransformer: (self: SmartContract) => void,
+    description: string,
+    customLockTime?: number,
+    outputs?: CreateActionOutput[]
 ): Promise<CreateActionResult> => {
     return await createAction({
         inputs: {
@@ -72,14 +75,15 @@ const redeem = async (
                     {
                         index: listResult.vout,
                         unlockingScript: await listResult.contract
-                            .getUnlockingScript(() => {})
+                            .getUnlockingScript(redeemTransformer)
                             .toHex(),
                     },
                 ],
             },
         },
         description,
-        outputs: [],
+        lockTime: customLockTime,
+        outputs,
     })
 }
 
@@ -97,8 +101,13 @@ async function main() {
         return Demo.fromLockingScript(lockingScript) as Demo
     })
     console.log('listed', contracts)
-    contracts[0].contract.unlock(toByteString('hello world', true))
-    const redeemTX = await redeem(contracts[0], 'redeem a smart contract')
+    const redeemTX = await redeem(
+        contracts[0],
+        (self: SmartContract): void => {
+            (self as Demo).unlock(toByteString('hello world', true))
+        },
+        'redeem a smart contract'
+    )
     console.log('REDEEMED!!', redeemTX.txid)
 }
 
